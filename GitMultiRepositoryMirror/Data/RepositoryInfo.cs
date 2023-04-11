@@ -14,6 +14,8 @@ namespace GitMultiRepositoryMirror.Data
 
         public List<string> Branches { get; }
 
+        public bool ConfigureAsNonInteractive { get; set; }
+
         public RepositoryInfo()
         {
             Branches = new List<string>();

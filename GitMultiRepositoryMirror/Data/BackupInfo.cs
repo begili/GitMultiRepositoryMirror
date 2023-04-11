@@ -32,6 +32,8 @@ namespace GitMultiRepositoryMirror.Data
             set { _TargetPath = value; }
         }
 
+        public bool IsServerURLWithCredentials { get; set; }
+
         public List<RepositoryInfo> Repositories { get; }
 
         #endregion >> Properties <<

@@ -16,13 +16,13 @@ namespace GitMuiltiRepositoryMirror.Core
                 Directory.CreateDirectory(config.TargetPath);
             foreach (var item in config.Repositories)
             {
-                BackupRepo($"{config.Server}/{item.RepositorySubPath}", config.TargetPath, item, logLine);
+                BackupRepo($"{config.Server}/{item.RepositorySubPath}", config.TargetPath, item, config.IsServerURLWithCredentials, logLine);
             }
         }
 
-        private static void BackupRepo(string url, string directory, RepositoryInfo repoInfo, Action<string> logLine)
+        private static void BackupRepo(string url, string directory, RepositoryInfo repoInfo, bool isServerURLWithCredentials, Action<string> logLine)
         {
-            string workingDirectory = Path.Combine(directory, repoInfo.RepositorySubPath);
+            string workingDirectory = Path.Combine(directory, !string.IsNullOrEmpty(repoInfo.DirectoryName) ? repoInfo.DirectoryName : repoInfo.RepositorySubPath);
             if (Directory.Exists(workingDirectory))
             {
                 //REPO INFO exists
@@ -32,16 +32,25 @@ namespace GitMuiltiRepositoryMirror.Core
             {
                 Directory.CreateDirectory(workingDirectory);
                 logLine?.Invoke($"Cloning repository {repoInfo.RepositorySubPath} ...");
-                ExecuteGitCommand($"clone {url} {workingDirectory}", workingDirectory, logLine);
+                ExecuteGitCommand($"init", workingDirectory, logLine);
+                if (repoInfo.ConfigureAsNonInteractive)
+                    ExecuteGitCommand("config credential.interactive false", workingDirectory, logLine);
+                ExecuteGitCommand($"pull {url}", workingDirectory, logLine);
             }
             logLine?.Invoke("Pulling new data");
-            ExecuteGitCommand("fetch --all", workingDirectory, logLine);
+            if (isServerURLWithCredentials)
+                ExecuteGitCommand($"fetch {url} --all", workingDirectory, logLine);
+            else
+                ExecuteGitCommand("fetch --all", workingDirectory, logLine);
             ExecuteGitCommand("branch -r", workingDirectory, logLine);
             foreach (var item in repoInfo.Branches)
             {
                 ExecuteGitCommand($"checkout {item}", workingDirectory, logLine);
             }
-            ExecuteGitCommand("pull --all", workingDirectory, logLine);
+            if (isServerURLWithCredentials)
+                ExecuteGitCommand($"pull {url} --all", workingDirectory, logLine);
+            else
+                ExecuteGitCommand("pull --all", workingDirectory, logLine);
         }
 
         private static void ExecuteGitCommand(string args, string workingDir, Action<string> logLine)
