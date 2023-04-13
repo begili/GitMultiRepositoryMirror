@@ -4,53 +4,58 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace GitMuiltiRepositoryMirror.Core
 {
     public static class BackupWorker
     {
+        private static readonly Regex s_rxURLTokenReplace = new Regex(@"(https?:\/\/)(.*)");
+
         public static void BackupRepositories(BackupInfo config, Action<string> logLine)
         {
             if (!Directory.Exists(config.TargetPath))
                 Directory.CreateDirectory(config.TargetPath);
             foreach (var item in config.Repositories)
             {
-                BackupRepo($"{config.Server}/{item.RepositorySubPath}", config.TargetPath, item, config.IsServerURLWithCredentials, logLine);
+                BackupRepo(item.IsSubPathAbsolute ? item.RepositorySubPath : $"{config.Server}/{item.RepositorySubPath}", config.TargetPath, item, config.AuthToken, logLine);
             }
         }
 
-        private static void BackupRepo(string url, string directory, RepositoryInfo repoInfo, bool isServerURLWithCredentials, Action<string> logLine)
+        private static void BackupRepo(string url, string directory, RepositoryInfo repoInfo, string authToken, Action<string> logLine)
         {
             string workingDirectory = Path.Combine(directory, !string.IsNullOrEmpty(repoInfo.DirectoryName) ? repoInfo.DirectoryName : repoInfo.RepositorySubPath);
+            string authUrl = url;
+            bool useAuthToken = false;
+            if (!string.IsNullOrEmpty(authToken) && s_rxURLTokenReplace.IsMatch(authUrl))
+            {
+                var match = s_rxURLTokenReplace.Match(authUrl);
+                authUrl = $"{match.Groups[1]}{authToken.Trim()}@{match.Groups[2]}";
+                useAuthToken = true;
+            }
             if (Directory.Exists(workingDirectory))
             {
                 //REPO INFO exists
                 logLine?.Invoke($"Using existing repository {repoInfo.RepositorySubPath}");
+                if (useAuthToken)
+                    ExecuteGitCommand($"remote set-url origin {authUrl}", workingDirectory, logLine);
             }
             else
             {
                 Directory.CreateDirectory(workingDirectory);
                 logLine?.Invoke($"Cloning repository {repoInfo.RepositorySubPath} ...");
-                ExecuteGitCommand($"init", workingDirectory, logLine);
-                if (repoInfo.ConfigureAsNonInteractive)
-                    ExecuteGitCommand("config credential.interactive false", workingDirectory, logLine);
-                ExecuteGitCommand($"pull {url}", workingDirectory, logLine);
+                ExecuteGitCommand($"clone {authUrl} {workingDirectory}", workingDirectory, logLine);
             }
             logLine?.Invoke("Pulling new data");
-            if (isServerURLWithCredentials)
-                ExecuteGitCommand($"fetch {url} --all", workingDirectory, logLine);
-            else
-                ExecuteGitCommand("fetch --all", workingDirectory, logLine);
-            ExecuteGitCommand("branch -r", workingDirectory, logLine);
+            ExecuteGitCommand("fetch --all", workingDirectory, logLine);
+            ExecuteGitCommand("branch -v -a", workingDirectory, logLine);
             foreach (var item in repoInfo.Branches)
             {
-                ExecuteGitCommand($"checkout {item}", workingDirectory, logLine);
+                ExecuteGitCommand($"switch -c {item} origin/{item}", workingDirectory, logLine);
             }
-            if (isServerURLWithCredentials)
-                ExecuteGitCommand($"pull {url} --all", workingDirectory, logLine);
-            else
-                ExecuteGitCommand("pull --all", workingDirectory, logLine);
+            ExecuteGitCommand("pull --all", workingDirectory, logLine);
+            ExecuteGitCommand($"remote set-url origin {url}", workingDirectory, logLine);
         }
 
         private static void ExecuteGitCommand(string args, string workingDir, Action<string> logLine)

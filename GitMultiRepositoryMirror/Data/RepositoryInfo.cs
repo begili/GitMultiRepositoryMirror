@@ -16,6 +16,8 @@ namespace GitMultiRepositoryMirror.Data
 
         public bool ConfigureAsNonInteractive { get; set; }
 
+        public bool IsSubPathAbsolute { get; set; }
+
         public RepositoryInfo()
         {
             Branches = new List<string>();

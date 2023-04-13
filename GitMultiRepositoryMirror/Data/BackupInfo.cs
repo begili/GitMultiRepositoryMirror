@@ -32,7 +32,7 @@ namespace GitMultiRepositoryMirror.Data
             set { _TargetPath = value; }
         }
 
-        public bool IsServerURLWithCredentials { get; set; }
+        public string AuthToken { get; set; }
 
         public List<RepositoryInfo> Repositories { get; }
 
