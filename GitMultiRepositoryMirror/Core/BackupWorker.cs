@@ -7,15 +7,16 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
-namespace GitMuiltiRepositoryMirror.Core
+namespace GitMultiRepositoryMirror.Core
 {
-    public static class BackupWorker
+    public class BackupWorker
     {
         private static readonly Regex s_rxURLTokenReplace = new Regex(@"(https?:\/\/)(.*)");
 
+        public event EventHandler<RepositoryBackupFinishedEventArgs> RepositoryBackupFinished;
         public delegate void LogMessage(string message, bool isError = false);
 
-        public static void BackupRepositories(BackupInfo config, LogMessage logLine)
+        public void BackupRepositories(BackupInfo config, LogMessage logLine)
         {
             if (!Directory.Exists(config.TargetPath))
                 Directory.CreateDirectory(config.TargetPath);
@@ -25,8 +26,9 @@ namespace GitMuiltiRepositoryMirror.Core
             }
         }
 
-        private static void BackupRepo(string url, string directory, RepositoryInfo repoInfo, string authToken, LogMessage logLine)
+        private void BackupRepo(string url, string directory, RepositoryInfo repoInfo, string authToken, LogMessage logLine)
         {
+            repoInfo.BackupStarted = DateTime.Now;
             string workingDirectory = Path.Combine(directory, !string.IsNullOrEmpty(repoInfo.DirectoryName) ? repoInfo.DirectoryName : repoInfo.RepositorySubPath);
             string authUrl = url;
             bool useAuthToken = false;
@@ -78,6 +80,8 @@ namespace GitMuiltiRepositoryMirror.Core
                 ExecuteGitCommand("pull --all", workingDirectory, logLine);
             }
             ExecuteGitCommand($"remote set-url origin {url}", workingDirectory, logLine);
+            repoInfo.BackupFinished = DateTime.Now;
+            RepositoryBackupFinished?.Invoke(this, new RepositoryBackupFinishedEventArgs(repoInfo));
         }
 
         /// <summary>

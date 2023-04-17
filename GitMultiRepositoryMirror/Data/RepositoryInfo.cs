@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Xml.Serialization;
 
 namespace GitMultiRepositoryMirror.Data
 {
@@ -17,6 +18,12 @@ namespace GitMultiRepositoryMirror.Data
         public bool ConfigureAsNonInteractive { get; set; }
 
         public bool IsSubPathAbsolute { get; set; }
+
+        [XmlIgnore]
+        public DateTime BackupStarted { get; set; }
+
+        [XmlIgnore]
+        public DateTime BackupFinished { get; set; }
 
         public RepositoryInfo()
         {

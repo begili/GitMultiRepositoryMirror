@@ -1,4 +1,4 @@
-﻿using GitMuiltiRepositoryMirror.Core;
+﻿using GitMultiRepositoryMirror.Core;
 using GitMultiRepositoryMirror.Data;
 using System;
 using System.Diagnostics;
@@ -21,7 +21,7 @@ namespace GitMultiRepositoryMirror.Test
             var config = BackupInfo.FromConfigFile(configPath);
             if (config == null || config.Server.Contains("<") || config.Repositories.Select(it => it.RepositorySubPath).Contains("<PATH_TO_EXAMPLE_REPO>"))
                 return Unconfigured();
-            BackupWorker.BackupRepositories(config, (msg, error) => Console.WriteLine($"{(error ? "ERROR: " : "")}{msg}"));
+            (new BackupWorker()).BackupRepositories(config, (msg, error) => Console.WriteLine($"{(error ? "ERROR: " : "")}{msg}"));
             Console.WriteLine("Done");
             return 0;
         }
