@@ -13,7 +13,9 @@ namespace GitMuiltiRepositoryMirror.Core
     {
         private static readonly Regex s_rxURLTokenReplace = new Regex(@"(https?:\/\/)(.*)");
 
-        public static void BackupRepositories(BackupInfo config, Action<string> logLine)
+        public delegate void LogMessage(string message, bool isError = false);
+
+        public static void BackupRepositories(BackupInfo config, LogMessage logLine)
         {
             if (!Directory.Exists(config.TargetPath))
                 Directory.CreateDirectory(config.TargetPath);
@@ -23,7 +25,7 @@ namespace GitMuiltiRepositoryMirror.Core
             }
         }
 
-        private static void BackupRepo(string url, string directory, RepositoryInfo repoInfo, string authToken, Action<string> logLine)
+        private static void BackupRepo(string url, string directory, RepositoryInfo repoInfo, string authToken, LogMessage logLine)
         {
             string workingDirectory = Path.Combine(directory, !string.IsNullOrEmpty(repoInfo.DirectoryName) ? repoInfo.DirectoryName : repoInfo.RepositorySubPath);
             string authUrl = url;
@@ -45,20 +47,47 @@ namespace GitMuiltiRepositoryMirror.Core
             {
                 Directory.CreateDirectory(workingDirectory);
                 logLine?.Invoke($"Cloning repository {repoInfo.RepositorySubPath} ...");
-                ExecuteGitCommand($"clone {authUrl} {workingDirectory}", workingDirectory, logLine);
+                if (!ExecuteGitCommand($"clone {authUrl} {workingDirectory}", workingDirectory, logLine))
+                    return;
             }
-            logLine?.Invoke("Pulling new data");
-            ExecuteGitCommand("fetch --all", workingDirectory, logLine);
-            ExecuteGitCommand("branch -v -a", workingDirectory, logLine);
-            foreach (var item in repoInfo.Branches)
+            logLine?.Invoke("Evaluating local branches");
+            string[] defaultOutput, errorOutput;
+            var branchSuccessful = ExecuteGitCommandWithResult("branch", workingDirectory, logLine, out defaultOutput, out errorOutput);
+            bool errorOccuredIntermediate = false;
+            if (branchSuccessful)
             {
-                ExecuteGitCommand($"switch -c {item} origin/{item}", workingDirectory, logLine);
+                HashSet<string> existingBranches = new HashSet<string>();
+                foreach (var item in defaultOutput)
+                {
+                    string branch = item;
+                    if (branch.StartsWith("*"))
+                        branch = branch.Substring(1);
+                    branch = branch.Trim();
+                    existingBranches.Add(branch);
+                }
+                logLine?.Invoke("Pulling new data");
+                ExecuteGitCommand("fetch --all", workingDirectory, logLine);
+                ExecuteGitCommand("branch -v -a", workingDirectory, logLine);
+                foreach (var item in repoInfo.Branches)
+                {
+                    if (!existingBranches.Contains(item))
+                        //ExecuteGitCommand($"switch -c {item} origin/{item}", workingDirectory, logLine);
+                        if (!ExecuteGitCommand($"switch -c {item} origin/{item}", workingDirectory, logLine))
+                            return;
+                }
+                ExecuteGitCommand("pull --all", workingDirectory, logLine);
             }
-            ExecuteGitCommand("pull --all", workingDirectory, logLine);
             ExecuteGitCommand($"remote set-url origin {url}", workingDirectory, logLine);
         }
 
-        private static void ExecuteGitCommand(string args, string workingDir, Action<string> logLine)
+        /// <summary>
+        /// Executes the git command with the specified parameters
+        /// </summary>
+        /// <param name="args"></param>
+        /// <param name="workingDir"></param>
+        /// <param name="logLine">Logging method</param>
+        /// <returns>true, if the command ran without any errors on StandardError. false otherwise</returns>
+        private static bool ExecuteGitCommand(string args, string workingDir, LogMessage logLine)
         {
 
             ProcessStartInfo psiClone = new ProcessStartInfo("git", args);
@@ -66,13 +95,22 @@ namespace GitMuiltiRepositoryMirror.Core
             psiClone.UseShellExecute = false;
             psiClone.CreateNoWindow = true;
             psiClone.RedirectStandardOutput = true;
+            psiClone.RedirectStandardError = true;
             var pClone = Process.Start(psiClone);
+            List<Tuple<string, bool>> logLinesWithError = new List<Tuple<string, bool>>();
             while (!pClone.StandardOutput.EndOfStream)
-                logLine?.Invoke(pClone.StandardOutput.ReadLine());
+                logLinesWithError.Add(new Tuple<string, bool>(pClone.StandardOutput.ReadLine(), false));
+            while (!pClone.StandardError.EndOfStream)
+                logLinesWithError.Add(new Tuple<string, bool>(pClone.StandardError.ReadLine(), true));
             pClone.WaitForExit();
+            var eCode = pClone.ExitCode;
+            //Workaround as invoke of git command leads to normal messages being written to stderr
+            foreach (var item in logLinesWithError)
+                logLine?.Invoke(item.Item1, item.Item2 && eCode != 0);
+            return eCode == 0;
         }
 
-        private static string[] ExecuteGitCommandWithResult(string args, string workingDir, Action<string> logLine)
+        private static bool ExecuteGitCommandWithResult(string args, string workingDir, LogMessage logLine, out string[] defaultOutput, out string[] errorOutput)
         {
 
             ProcessStartInfo psiClone = new ProcessStartInfo("git", args);
@@ -80,12 +118,18 @@ namespace GitMuiltiRepositoryMirror.Core
             psiClone.UseShellExecute = false;
             psiClone.CreateNoWindow = true;
             psiClone.RedirectStandardOutput = true;
+            psiClone.RedirectStandardError = true;
             var pClone = Process.Start(psiClone);
             List<string> lines = new List<string>();
+            List<string> errorLines = new List<string>();
             while (!pClone.StandardOutput.EndOfStream)
                 lines.Add(pClone.StandardOutput.ReadLine());
+            while (!pClone.StandardError.EndOfStream)
+                errorLines.Add(pClone.StandardError.ReadLine());
             pClone.WaitForExit();
-            return lines.ToArray();
+            defaultOutput = lines.ToArray();
+            errorOutput = errorLines.ToArray();
+            return pClone.ExitCode == 0;
         }
     }
 }
